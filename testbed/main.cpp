@@ -6,12 +6,12 @@
 #include <vector>
 #include <string>
 #include <cmath>
-#define _USE_MATH_DEFINES
 #include <math.h>
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <lodepng.h>
 
 namespace {
 
@@ -43,12 +43,12 @@ struct PointLight {
 struct SpotLight {
     glm::vec3 position;
     float _pad0;
-    glm::vec3 direction;
+    glm::vec3 direction; // куда светит
     float _pad1;
     glm::vec3 color;
     float intensity;
-    float innerCutoff;
-    float outerCutoff;
+    float innerCutoff; // внутренний угол конуса
+    float outerCutoff; // внешний
     float _pad2;
     float _pad3;
 };
@@ -94,11 +94,18 @@ struct Model {
     Mesh mesh;
     Transform transform;
     Material material;
+    size_t texture_material_index;
 };
 
 enum class CameraMode {
     LookAt,
     Transform
+};
+
+struct TextureMaterial {
+    veekay::graphics::Texture* texture;
+    VkSampler sampler;
+    VkDescriptorSet descriptor_set;
 };
 
 struct Camera {
@@ -179,6 +186,10 @@ inline namespace {
     Mesh plane_mesh;
     Mesh cube_mesh;
     Mesh sphere_mesh;
+
+    veekay::graphics::Texture* missing_texture;
+    VkSampler missing_texture_sampler;
+    std::vector<TextureMaterial> texture_materials;
 }
 
 float toRadians(float degrees) {
@@ -491,12 +502,16 @@ void initialize(VkCommandBuffer cmd) {
             {
                 .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .descriptorCount = 16,
-            }
+            },
+            {
+                .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = 16,
+            },
         };
 
         VkDescriptorPoolCreateInfo pool_info{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .maxSets = 1,
+            .maxSets = 10,
             .poolSizeCount = sizeof(pools) / sizeof(pools[0]),
             .pPoolSizes = pools,
         };
@@ -531,7 +546,13 @@ void initialize(VkCommandBuffer cmd) {
                 .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                 .descriptorCount = 1,
                 .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-            }
+            },
+            {
+                .binding = 4,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorCount = 1,
+                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            },
         };
 
         VkDescriptorSetLayoutCreateInfo layout_info{
@@ -613,6 +634,61 @@ void initialize(VkCommandBuffer cmd) {
         nullptr,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
+    {
+        const char* texture_paths[] = {
+            "./textures/marmot.png",
+            "./textures/pig.png",
+            "./textures/city.png",
+            "./textures/meme.png",
+            "./textures/textures.png",
+        };
+
+        const size_t num_textures = sizeof(texture_paths) / sizeof(texture_paths[0]);
+
+        for (size_t i = 0; i < num_textures; ++i) {
+            TextureMaterial tex_mat{};
+
+            std::vector<uint8_t> image_data;
+            unsigned width, height;
+
+            unsigned error = lodepng::decode(image_data, width, height, texture_paths[i]);
+
+            if (error) {
+                std::cerr << "Failed to load texture " << texture_paths[i] << ": "
+                          << lodepng_error_text(error) << "\n";
+                tex_mat.texture = missing_texture;
+                tex_mat.sampler = missing_texture_sampler;
+            } else {
+                VkSamplerCreateInfo sampler_info{
+                    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                    .magFilter = VK_FILTER_LINEAR,
+                    .minFilter = VK_FILTER_LINEAR,
+                    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                    .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                    .maxLod = VK_LOD_CLAMP_NONE,
+                };
+
+                if (vkCreateSampler(device, &sampler_info, nullptr, &tex_mat.sampler) != VK_SUCCESS) {
+                    std::cerr << "Failed to create sampler\n";
+                    tex_mat.texture = missing_texture;
+                    tex_mat.sampler = missing_texture_sampler;
+                } else {
+                    tex_mat.texture = new veekay::graphics::Texture(
+                        cmd, width, height,
+                        VK_FORMAT_R8G8B8A8_UNORM,
+                        image_data.data()
+                    );
+                }
+            }
+
+            texture_materials.push_back(tex_mat);
+        }
+
+        std::cout << "Total texture materials loaded: " << texture_materials.size() << "\n";
+    }
+
     VkDescriptorBufferInfo buffer_infos[] = {
         {
             .buffer = scene_uniforms_buffer->buffer,
@@ -677,13 +753,123 @@ void initialize(VkCommandBuffer cmd) {
 
     vkUpdateDescriptorSets(device, sizeof(write_infos) / sizeof(write_infos[0]), write_infos, 0, nullptr);
 
+    {
+        std::cout << "Creating descriptor sets for " << texture_materials.size() << " texture materials...\n";
+
+        std::vector<VkDescriptorSetLayout> layouts(texture_materials.size(), descriptor_set_layout);
+        std::vector<VkDescriptorSet> sets(texture_materials.size());
+
+        VkDescriptorSetAllocateInfo info{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = descriptor_pool,
+            .descriptorSetCount = static_cast<uint32_t>(texture_materials.size()),
+            .pSetLayouts = layouts.data(),
+        };
+
+        if (vkAllocateDescriptorSets(device, &info, sets.data()) != VK_SUCCESS) {
+            std::cerr << "Failed to create descriptor sets for textures\n";
+            veekay::app.running = false;
+            return;
+        }
+
+        for (size_t i = 0; i < texture_materials.size(); ++i) {
+            texture_materials[i].descriptor_set = sets[i];
+        }
+
+        std::cout << "Created " << texture_materials.size() << " descriptor sets\n";
+    }
+
+    {
+    VkDescriptorBufferInfo scene_buffer_info{
+        .buffer = scene_uniforms_buffer->buffer,
+        .offset = 0,
+        .range = sizeof(SceneUniforms),
+    };
+
+    VkDescriptorBufferInfo model_buffer_info{
+        .buffer = model_uniforms_buffer->buffer,
+        .offset = 0,
+        .range = sizeof(ModelUniforms),
+    };
+
+    VkDescriptorBufferInfo point_lights_buffer_info{
+        .buffer = point_lights_buffer->buffer,
+        .offset = 0,
+        .range = VK_WHOLE_SIZE,
+    };
+
+    VkDescriptorBufferInfo spotlights_buffer_info{
+        .buffer = spotlights_buffer->buffer,
+        .offset = 0,
+        .range = VK_WHOLE_SIZE,
+    };
+
+    for (size_t i = 0; i < texture_materials.size(); ++i) {
+        VkDescriptorImageInfo image_info{
+            .sampler = texture_materials[i].sampler,
+            .imageView = texture_materials[i].texture->view,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+
+        VkWriteDescriptorSet write_infos[] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = texture_materials[i].descriptor_set,
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &scene_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = texture_materials[i].descriptor_set,
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+                .pBufferInfo = &model_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = texture_materials[i].descriptor_set,
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &point_lights_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = texture_materials[i].descriptor_set,
+                .dstBinding = 3,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .pBufferInfo = &spotlights_buffer_info,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = texture_materials[i].descriptor_set,
+                .dstBinding = 4,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &image_info,
+            },
+        };
+
+        vkUpdateDescriptorSets(device, 5, write_infos, 0, nullptr);
+        }
+    }
+
     // Create meshes
     {
         std::vector<Vertex> vertices = {
             {glm::vec3(-5.0f, 0.0f,  5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 0.0f)},
-            {glm::vec3( 5.0f, 0.0f,  5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(5.0f, 0.0f)},
-            {glm::vec3( 5.0f, 0.0f, -5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(5.0f, 5.0f)},
-            {glm::vec3(-5.0f, 0.0f, -5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 5.0f)},
+            {glm::vec3( 5.0f, 0.0f,  5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 0.0f)},
+            {glm::vec3( 5.0f, 0.0f, -5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 1.0f)},
+            {glm::vec3(-5.0f, 0.0f, -5.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 1.0f)},
         };
         std::vector<uint32_t> indices = {
             0, 1, 2, 2, 3, 0
@@ -748,13 +934,14 @@ void initialize(VkCommandBuffer cmd) {
         .mesh = plane_mesh,
         .transform = {.position = {0.0f, 5.0f, 0.0f}},
         .material = {
-            .albedo = {0.8f, 0.8f, 0.8f},
+            .albedo = {1.0f, 1.0f, 1.0f},
             .specular = {0.3f, 0.3f, 0.3f},
-            .shininess = 32.0f
-        }
+            .shininess = 32.0f,
+        },
+        .texture_material_index = 3,
     });
 
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
         models.push_back({
             .mesh = cube_mesh,
             .transform = {
@@ -762,10 +949,11 @@ void initialize(VkCommandBuffer cmd) {
                 .scale = {0.8f, 0.8f, 0.8f}
             },
             .material = {
-                .albedo = {0.2f + i * 0.3f, 0.3f, 0.8f - i * 0.2f},
+                .albedo = {1.0f, 1.0f, 1.0f},
                 .specular = {0.8f, 0.8f, 0.8f},
                 .shininess = 64.0f
-            }
+            },
+            .texture_material_index = i,
         });
     }
 
@@ -776,10 +964,11 @@ void initialize(VkCommandBuffer cmd) {
             .scale = {1.2f, 1.2f, 1.2f}
         },
         .material = {
-            .albedo = {0.9f, 0.3f, 0.2f},
+            .albedo = {1.0f, 1.0f, 1.0f},
             .specular = {1.0f, 1.0f, 1.0f},
-            .shininess = 128.0f
-        }
+            .shininess = 128.0f,
+        },
+        .texture_material_index = 4,
     });
 
     // Create lights
@@ -813,6 +1002,19 @@ void initialize(VkCommandBuffer cmd) {
 void shutdown() {
     VkDevice& device = veekay::app.vk_device;
 
+    vkDestroySampler(device, missing_texture_sampler, nullptr);
+    delete missing_texture;
+
+    for (auto& tex_mat : texture_materials) {
+        if (tex_mat.texture != missing_texture) {
+            delete tex_mat.texture;
+        }
+        if (tex_mat.sampler != missing_texture_sampler) {
+            vkDestroySampler(device, tex_mat.sampler, nullptr);
+        }
+    }
+    texture_materials.clear();
+
     delete sphere_mesh.vertex_buffer;
     delete sphere_mesh.index_buffer;
     delete cube_mesh.vertex_buffer;
@@ -830,6 +1032,7 @@ void shutdown() {
     vkDestroyShaderModule(device, fragment_shader_module, nullptr);
     vkDestroyShaderModule(device, vertex_shader_module, nullptr);
 }
+
 
 void update(double time) {
     static double last_time = time;
@@ -1165,8 +1368,9 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
         }
 
         uint32_t offset = uint32_t(i * aligned_sizeof);
+        VkDescriptorSet current_descriptor_set = texture_materials[model.texture_material_index].descriptor_set;
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
-                               0, 1, &descriptor_set, 1, &offset);
+                                0, 1, &current_descriptor_set, 1, &offset);
         vkCmdDrawIndexed(cmd, mesh.indices, 1, 0, 0, 0);
     }
 

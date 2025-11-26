@@ -58,6 +58,8 @@ layout (std430, binding = 3) readonly buffer SpotLightsBuffer {
     SpotLight spotlights[];
 };
 
+layout (binding = 4) uniform sampler2D u_texture;
+
 vec3 calculate_blinn_phong(vec3 light_dir, vec3 light_color, vec3 normal, vec3 view_dir) {
     // Diffuse component (main color)
     float diff = max(dot(normal, light_dir), 0.0);
@@ -72,17 +74,19 @@ vec3 calculate_blinn_phong(vec3 light_dir, vec3 light_color, vec3 normal, vec3 v
 }
 
 void main() {
+    vec4 texture_color = texture(u_texture, f_uv);
+
     vec3 normal = normalize(f_normal);
     vec3 view_dir = normalize(camera_position - f_position);
 
     // Ambient lighting
-    vec3 result = ambient_light * albedo_color;
+    vec3 result = ambient_light * albedo_color * texture_color.rgb;
 
     // Directional light
     vec3 light_dir = normalize(-directional_light_direction);
     result += calculate_blinn_phong(light_dir,
                                     directional_light_color * directional_light_intensity,
-                                    normal, view_dir);
+                                    normal, view_dir) * texture_color.rgb;
 
     // Point lights
     for (uint i = 0; i < num_point_lights; ++i) {
@@ -93,7 +97,7 @@ void main() {
         float attenuation = point_lights[i].intensity / (distance * distance);
         vec3 light_color = point_lights[i].color * attenuation;
 
-        result += calculate_blinn_phong(light_dir, light_color, normal, view_dir);
+        result += calculate_blinn_phong(light_dir, light_color, normal, view_dir) * texture_color.rgb;
     }
 
     // Spotlights
@@ -108,10 +112,10 @@ void main() {
         float intensity = clamp((theta - spotlights[i].outerCutoff) / epsilon, 0.0, 1.0);
 
         // Inverse square law attenuation
-        float attenuation = spotlights[i].intensity / (distance * distance);
+        float attenuation = spotlights[i].intensity / (1.0 + distance * distance);
         vec3 light_color = spotlights[i].color * attenuation * intensity;
 
-        result += calculate_blinn_phong(light_dir, light_color, normal, view_dir);
+        result += calculate_blinn_phong(light_dir, light_color, normal, view_dir) * texture_color.rgb;
     }
 
     final_color = vec4(result, 1.0f);
