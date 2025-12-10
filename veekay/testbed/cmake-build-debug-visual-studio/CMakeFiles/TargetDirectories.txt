@@ -1,0 +1,4 @@
+D:/veekay/testbed/cmake-build-debug-visual-studio/CMakeFiles/testbed.dir
+D:/veekay/testbed/cmake-build-debug-visual-studio/CMakeFiles/shaders.dir
+D:/veekay/testbed/cmake-build-debug-visual-studio/CMakeFiles/edit_cache.dir
+D:/veekay/testbed/cmake-build-debug-visual-studio/CMakeFiles/rebuild_cache.dir

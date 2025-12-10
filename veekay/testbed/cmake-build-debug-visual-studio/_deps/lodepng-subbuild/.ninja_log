@@ -1,0 +1,21 @@
+# ninja log v6
+1	37	7836201856681814	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-mkdir	6006588cd5a87677
+1	37	7836201856681814	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-mkdir	6006588cd5a87677
+37	4986	7836201906175011	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-download	56091ecdcf1f8211
+37	4986	7836201906175011	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-download	56091ecdcf1f8211
+4986	6835	7836201906204781	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-update	718487ed21ce9f09
+4986	6835	7836201906204781	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-update	718487ed21ce9f09
+6836	6871	7836201925023570	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-patch	3c309d3dd61c9182
+6836	6871	7836201925023570	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-patch	3c309d3dd61c9182
+6871	6907	7836201925380899	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-configure	a3327722f9023ff6
+6871	6907	7836201925380899	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-configure	a3327722f9023ff6
+6908	6944	7836201925754042	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-build	afa422ab7fe9c58d
+6908	6944	7836201925754042	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-build	afa422ab7fe9c58d
+6944	6982	7836201926134027	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-install	83c78dda061f9b8d
+6944	6982	7836201926134027	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-install	83c78dda061f9b8d
+6982	7022	7836201926528923	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-test	c143fc0c45b8e4c1
+6982	7022	7836201926528923	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-test	c143fc0c45b8e4c1
+7022	7072	7836201927031241	CMakeFiles/lodepng-populate-complete	38868fbe112dca60
+7022	7072	7836201927031241	lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-done	38868fbe112dca60
+7022	7072	7836201927031241	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/CMakeFiles/lodepng-populate-complete	38868fbe112dca60
+7022	7072	7836201927031241	D:/veekay/testbed/cmake-build-debug-visual-studio/_deps/lodepng-subbuild/lodepng-populate-prefix/src/lodepng-populate-stamp/lodepng-populate-done	38868fbe112dca60
